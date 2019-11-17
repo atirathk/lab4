@@ -1,11 +1,4 @@
-// Program2
-// CylTree.js
-/**
- * Created by Fahim Hasan Khan
- * Date: 10/29/2019
- * DISCLAIMER: Use at your own risk. There's more than one way to implement this. So, this method may be completely different than yours, your data structure, your coding style, etc. and may also require time to adapt to your code, etc. It is highly recommended the use it as a guide to complete your version (if necessary), or use it as it is and expand to add functionality for remaining assignments.
- */
-
+// Lab4
 // Vertex shader program
 var VSHADER_SOURCE =
 	'attribute vec3 a_Position;\n' +
@@ -25,12 +18,15 @@ var VSHADER_SOURCE =
 	'uniform bool u_PickedTree;\n' +
 	'uniform float u_Id;\n' +
 	'uniform vec4 u_Kd;   // Diffuse reflection coefficient\n' +
+	'uniform vec3 u_Ks;   // Specular reflection coefficient\n' +
+	'uniform float u_ShininessVal;\n' +
 	'varying float v_Id;		// ID for the tree\n' +
 	'// Material color\n' +
 	'uniform vec4 u_Color;\n' +
 	'uniform vec3 u_LightColor;\n' +
 	'uniform vec3 u_LightDirection; // Light direction;\n' +
-	'uniform vec3 u_LightDirectionSphere; // Light direction for the sphere;\n' +
+	'uniform vec3 u_SpherePosition; // Light direction for the sphere;\n' +
+	'uniform bool u_SphereOn;\n' +
 	'varying vec4 v_Color; //color\n' +
 	'const float PI = 3.1415926535897932384626433832795;\n' +
 	'const vec3 sphereLight = vec3(0.5,0.5,1.0);\n' +
@@ -46,7 +42,7 @@ var VSHADER_SOURCE =
   '	 gl_Position = u_Projection * vertPos4;\n' +
 	'  vec3 N = normalize(v_NormalInterp);\n' +
 	'  vec3 L = normalize(u_LightDirection);\n' +
-	'  vec3 LS = normalize(u_LightDirectionSphere);\n' +
+	'  vec3 LS = normalize(u_SpherePosition - a_Position);\n' +
 	'  // Lambert\'s cosine law\n' +
 	'  float lambertian = max(dot(N, L), 0.0);\n' +
 	'  float lambertianSphere = max(dot(N, LS), 0.0);\n' +
@@ -54,12 +50,27 @@ var VSHADER_SOURCE =
 	'  if(lambertian > 0.0) {\n' +
 	'    vec3 R = reflect(-L, N);      // Reflected light vector\n' +
 	'    vec3 V = normalize(-v_VertPos); // Vector to viewer\n' +
+	'    // Compute the specular term\n' +
+	'    float specAngle = max(dot(R, V), 0.0);\n' +
+	'    specular += pow(specAngle, u_ShininessVal);\n' +
 	'  }\n' +
+	'  float specularSphere = 0.0;\n' +
 	'  if(lambertianSphere > 0.0) {\n' +
-	'    vec3 R = reflect(-LS, N);      // Reflected light vector\n' +
-	'    vec3 V = normalize(-v_VertPos); // Vector to viewer\n' +
+	'    vec3 RS = reflect(-LS, N);      // Reflected light vector\n' +
+	'    vec3 VS = normalize(-v_VertPos); // Vector to viewer\n' +
+	'    // Compute the specular term\n' +
+	'    float specAngle = max(dot(RS, VS), 0.0);\n' +
+	'    specularSphere += pow(specAngle, u_ShininessVal);\n' +
 	'  }\n' +
-	'  vec3 diffuse = u_Color.rgb * lambertian * sphereLight * lambertianSphere * u_LightColor;\n' +
+	'  vec3 diffuse;\n' +
+	'	 if (u_SphereOn) {\n' +
+	'    diffuse = (u_Color.rgb * ((u_LightColor * lambertian) + (sphereLight * lambertianSphere))) +\n' +
+	'    (u_Ks * ((u_LightColor * specular) + (sphereLight * specularSphere)));\n' +	
+	'	 }\n' +
+	'	 else {\n' +
+	'    diffuse = (u_Color.rgb * u_LightColor * lambertian) +\n' +
+	'    (u_Ks *u_LightColor * specular);\n' +	
+	'	 }\n' +
 	'  if (u_Color.a == 1.0){\n' +
 	'    if (u_PickedTree) {\n' + //  Draw in red if mouse is pressed
 	'      v_Color = u_idColor;\n' +
@@ -98,7 +109,9 @@ var SpanY = 500;
 var selected = 0;
 var id = 0;
 var u_NormalMat;
-var spherePos = new Vector3(0, -100, 100);
+var spherePos = new Vector3([0, -100, 100]);
+var sphereSelected = false;
+var sphereID = 51;
 
 function main() {
 	// Retrieve <canvas> element
@@ -201,6 +214,15 @@ function main() {
 		console.log('Failed to intialize shaders.');
 		return;
 	}
+	var u_SphereOn = gl.getUniformLocation(gl.program, 'u_SphereOn');
+	var sphereOn = gl.getUniform(gl.program, u_SphereOn);
+	gl.uniform1i(u_SphereOn, true);
+	var u_Ks = gl.getUniformLocation(gl.program, 'u_Ks');
+	if (!u_Ks) {
+		console.log('Failed to get the storage location of u_Ks');
+		return;
+	}
+	gl.uniform3f(u_Ks, 1.0, 1.0, 1.0);
 	// Specify the color for clearing <canvas>
 	gl.clearColor(1.0, 1.0, 1.0, 1.0);
 	gl.enable(gl.DEPTH_TEST);
@@ -386,13 +408,11 @@ function mouseUp(ev, gl, canvas, u_ModelView, u_Projection) {
 	gl.readPixels(x_in_canvas, y_in_canvas, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 	console.log("pixel color value = " + pixels);
 	idx = Math.round(pixels[0]/5);
-
 	console.log("id value = " + idx);
 	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); 
 	gl.uniform1i(u_PickedTree, 0); // Pass false to u_Clicked(rewrite the cube)	
-
 	if (mode == 0  && mouseVec[0] == 0 && mouseVec[1] == 0 && btn != 1) {
-		if (selected == 0) {
+		if (selected == 0 && !sphereSelected) {
 			if (pixels[0] == 0) {
 				var translate = new Vector4();
 				var rotationX = new Matrix4();
@@ -400,15 +420,29 @@ function mouseUp(ev, gl, canvas, u_ModelView, u_Projection) {
 				var scale = new Matrix4();
 				g_points.push([x, y, btn, ++id, translate, rotationX, rotationZ, scale, z]); //format: [mouse x location, mouse y location, mouse button/tree type, tree id]
 			}
+			else if (pixels[0] == 255 && lastMouseDown[2] == 0) {
+				sphereSelected = true;
+			}
+			else if (pixels[0] == 255 && lastMouseDown[2] == 2) {
+				var u_SphereOn = gl.getUniformLocation(gl.program, 'u_SphereOn');
+				var sphereOn = gl.getUniform(gl.program, u_SphereOn);
+				gl.uniform1i(u_SphereOn, !sphereOn);
+
+				sphereOn = gl.getUniform(gl.program, u_SphereOn);
+				console.log('sphereOn: ', sphereOn);
+			}
 			else {
 				g_points[(idx-1)][2]++;
 				selected = idx;
 			}
 		}
-		else if (selected > 0) {
+		else if (selected > 0 || sphereSelected) {
 			if (pixels[0] == 0) {
-				g_points[(selected-1)][2]--;
-				selected = 0;
+				if (selected > 0) {
+					g_points[(selected-1)][2]--;
+					selected = 0;
+				}
+				sphereSelected = false;
 			}
 		}
 	}
@@ -462,33 +496,33 @@ function draw(gl, u_ModelView, u_Projection) {
 		gl.uniformMatrix4fv(u_Scale, false, g_points[xy[3]-1][7].elements);
 		drawTree(gl, u_ModelView, u_Projection, xy);
 	}
-	// Pass the translation distance to the vertex shader
-	var u_Translation = gl.getUniformLocation(gl.program, 'u_Translation');
-	if (!u_Translation) {
-		console.log('Failed to get the storage location of u_Translation');
-		return;
-	}
-	var u_Translation = gl.getUniformLocation(gl.program, 'u_Translation');
-	if (!u_Translation) {
-		console.log('Failed to get the storage location of u_Translation');
-		return;
-	}
-	gl.uniform4f(u_Translation, spherePos.elements[0], spherePos.elements[1], spherePos.elements[2], 1);
 	var scale = new Matrix4();
-	var s = 100;
+	var s = 5;
 	scale.setScale(s, s * aspectRatio, s, 1);
 	var u_Scale = gl.getUniformLocation(gl.program, 'u_Scale');
 	if (!u_Scale) {
 		console.log('Failed to get the storage location of u_Scale');
 		return;
 	}
-	var u_LightDirectionSphere = gl.getUniformLocation(gl.program, 'u_LightDirectionSphere');
-	if (!u_LightDirectionSphere) { 
+	var u_Translation = gl.getUniformLocation(gl.program, 'u_Translation');
+	if (!u_Translation) {
+		console.log('Failed to get the storage location of u_Translation');
+		return;
+	}
+	var u_SpherePosition = gl.getUniformLocation(gl.program, 'u_SpherePosition');
+	if (!u_SpherePosition) { 
 	  console.log('Failed to get uniform variable(s) storage location');
 	  return;
 	}
-	//var lightDirectionSphere = new Vector3([0, -100, 100]);
-	gl.uniform3f(u_LightDirectionSphere, spherePos.elements[0], spherePos.elements[1], spherePos.elements[2]);
+	if (sphereSelected) {
+		spherePos.elements[0] += mouseVec[0] * SpanX;
+		spherePos.elements[1] += mouseVec[1] * SpanY;
+		if (lastMouseDown[2] == 1) {
+			spherePos.elements[2] += mouseVec[1] * SpanY;
+		}
+	}
+	gl.uniform4f(u_Translation, spherePos.elements[0], spherePos.elements[1], spherePos.elements[2], 1);
+	gl.uniform3fv(u_SpherePosition, spherePos.elements);
 	gl.uniformMatrix4fv(u_Scale, false, scale.elements);
 	drawSphere(gl);
 }
@@ -654,16 +688,22 @@ function drawCylinder(gl, u_ModelView, u_Projection, x1, y1, z1, x2, y2, z2, d, 
     console.log('Failed to get the storage location of u_idColor');
     return;
   }
-  
+  var u_ShininessVal = gl.getUniformLocation(gl.program, 'u_ShininessVal');  
+  if (!u_ShininessVal) {
+		console.log('Failed to get the storage location of u_ShininessVal');
+		return;
+	}
   r_id = xy[3]/51; //Encoding tree id as color value (max 50 trees)
   
   gl.uniform4f(u_idColor, r_id, 1.0, 0.0, 1.0);
   if (mode == 0) {
 		if(xy[2] == 0) {
 			gl.uniform4f(u_Color, 1.0, 0.0, 0.0, 1.0);
+			gl.uniform1f(u_ShininessVal, 5);
 		}
 		else if (xy[2] == 2) {
 			gl.uniform4f(u_Color, 0.0, 0.0, 1.0, 1.0);
+			gl.uniform1f(u_ShininessVal, 20);
 		}
 		else if (xy[2] == 1 || xy[2] == 3) {
 			gl.uniform4f(u_Color, 0.0, 1.0, 0.0, 1.0);
@@ -676,7 +716,7 @@ function drawCylinder(gl, u_ModelView, u_Projection, x1, y1, z1, x2, y2, z2, d, 
   }
 }
 
-function drawSphere(gl, xy) { // Create a sphere
+function drawSphere(gl) { // Create a sphere
   var SPHERE_DIV = 13;
 
   var i, ai, si, ci;
@@ -746,9 +786,20 @@ function drawSphere(gl, xy) { // Create a sphere
     console.log('Failed to get the storage location of u_Color');
     return;
   }
-  gl.uniform4f(u_Color, 1, 1, 0, 1);
-  // Clear color and depth buffer
-
+  var u_idColor = gl.getUniformLocation(gl.program, 'u_idColor');
+  if (!u_idColor) {
+    console.log('Failed to get the storage location of u_idColor');
+    return;
+  }
+  r_id = sphereID/51; //Encoding tree id as color value (max 50 trees)
+  
+  gl.uniform4f(u_idColor, r_id, 1.0, 0.0, 1.0);
+  if (sphereSelected) {
+		gl.uniform4f(u_Color, 0, 1, 0, 1);
+  }
+  else {
+		gl.uniform4f(u_Color, 1, 1, 0, 1);
+  }
   // Draw the cube(Note that the 3rd argument is the gl.UNSIGNED_SHORT)
   gl.drawElements(gl.TRIANGLES, n, gl.UNSIGNED_SHORT, 0);
 }
