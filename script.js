@@ -464,14 +464,14 @@ function wheel(ev, gl, canvas, u_ModelView, u_Projection) {
 		  return;
 		}
 		var s;
-		var currentScale = gl.getUniform(gl.program, u_Scale);
+		var currentScale = g_points[selected - 1][7];
 		if (ev.deltaY > 0) {
-			s = currentScale[0] * 0.5;
+			g_points[idx-1][7].scale(0.5, 0.5, 0.5);
 		}
 		else {
-			s = currentScale[0] * 2.0;
+			g_points[idx-1][7].scale(2, 2, 2);
 		}
-		g_points[idx-1][7].scale(s, s, s);
+		//g_points[idx-1][7].scale(s, s, s);
 		gl.uniformMatrix4fv(u_Scale, false, g_points[idx-1][7].elements);
 	}
 	draw(gl, u_ModelView, u_Projection);
